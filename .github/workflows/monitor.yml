@@ -1,0 +1,58 @@
+name: Crash Monitor 24/7
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        pip install playwright
+        playwright install chromium --with-deps
+        
+    - name: Download previous records
+      continue-on-error: true
+      run: |
+        if [ -f crash_records.json ]; then
+          echo "Previous records found"
+        else
+          echo "[]" > crash_records.json
+        fi
+        
+    - name: Run monitor
+      env:
+        DISPLAY: ':99'
+      run: |
+        python crash_monitor_github.py
+        
+    - name: Upload records as artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: crash-records
+        path: |
+          crash_records.json
+          crash_records.csv
+        retention-days: 90
+        
+    - name: Commit and push if changed
+      run: |
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        git config --global user.name "github-actions[bot]"
+        git add crash_records.json crash_records.csv
+        git diff --quiet && git diff --staged --quiet || (git commit -m "Update crash records [skip ci]" && git push)
